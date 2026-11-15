@@ -23,7 +23,7 @@
 
   /* ---------- Biblioteca ---------- */
   #library { max-width: 880px; margin: 0 auto; padding: 28px 20px 60px; }
-  .lib-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .lib-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
   .lib-head h1 { font-size: 28px; letter-spacing: -0.02em; margin: 0; flex: 1; }
   .btn-primary { background: var(--accent); color: #fff; padding: 10px 16px; border-radius: 999px; font-weight: 600; display: inline-flex; gap: 6px; align-items: center; }
   .btn-primary:active { opacity: .8; }
@@ -83,6 +83,13 @@
   .modal .row { display: flex; gap: 10px; justify-content: flex-end; }
   .modal .row button { padding: 9px 16px; border-radius: 10px; font-weight: 600; background: #f0efeb; }
   .modal .row button.danger { background: var(--danger); color: #fff; }
+  .tpls { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 6px 0 18px; }
+  .tpl { border: 2px solid var(--line); border-radius: 10px; padding: 6px 6px 5px; background: #fff; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+  .tpl.on { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .tpl canvas { width: 100%; aspect-ratio: 595 / 842; border: 1px solid var(--line); border-radius: 3px; }
+  .modal input[type=text] { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; margin: 6px 0 12px; }
+  .modal .row button.primary { background: var(--accent); color: #fff; }
+  .btn-secondary { background: var(--accent-soft); color: var(--accent); padding: 10px 16px; border-radius: 999px; font-weight: 600; }
   .busy { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(244,243,239,.75); z-index: 30; flex-direction: column; gap: 12px; color: var(--muted); }
   .spin { width: 28px; height: 28px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: s 0.8s linear infinite; }
   @keyframes s { to { transform: rotate(360deg); } }
@@ -93,12 +100,13 @@
 <!-- Biblioteca -->
 <section id="library">
   <div class="lib-head">
-    <h1>Meus PDFs</h1>
+    <h1>Meus cadernos</h1>
+    <button class="btn-secondary" id="newNbBtn">＋ Novo caderno</button>
     <button class="btn-primary" id="importBtn">＋ Importar PDF</button>
   </div>
   <p class="store-note" id="storeNote">Conectando…</p>
   <div id="grid" class="grid"></div>
-  <div id="empty" class="empty hidden"><b>Nenhum PDF ainda</b>Toque em “Importar PDF” e escolha um arquivo do app Arquivos.</div>
+  <div id="empty" class="empty hidden"><b>Nada aqui ainda</b>Crie um caderno em branco ou importe um PDF do app Arquivos.</div>
   <input type="file" id="fileInput" accept="application/pdf,.pdf" multiple class="hidden">
 </section>
 
@@ -118,6 +126,8 @@
     <span class="sep"></span>
     <button class="ib" id="undoBtn" title="Desfazer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 010 11H11"/></svg></button>
     <button class="ib" id="redoBtn" title="Refazer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14l5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 000 11H13"/></svg></button>
+    <span class="sep"></span>
+    <button class="ib" id="addPageBtn" title="Adicionar página"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/><path d="M12 11v6M9 14h6"/></svg></button>
     <span class="spacer"></span>
     <button class="ib" id="zoomOut" title="Diminuir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 12h12"/></svg></button>
     <button class="zoomlbl" id="zoomLbl" title="Ajustar à largura">100%</button>
@@ -225,6 +235,12 @@ function cloudStore(db, assets, uid) {
       await col.doc(id).set(meta);
       return { id, ...meta };
     },
+    async addNotebook(name, tpl) {
+      const id = "pdf_" + rid();
+      const meta = { kind: "pdf", nb: true, name, blanks: [tpl], pages: 1, createdAt: Date.now(), updatedAt: Date.now(), lastPage: 1 };
+      await col.doc(id).set(meta);
+      return { id, ...meta };
+    },
     async bytes(meta) {
       const r = await fetch("/_blob/" + meta.assetId);
       if (!r.ok) throw new Error("Não encontrei o arquivo deste PDF (" + r.status + ").");
@@ -234,7 +250,7 @@ function cloudStore(db, assets, uid) {
       const ink = await col.where("kind", "==", "ink").where("pdf", "==", meta.id).get();
       for (const d of ink.docs) await col.doc(d.id).delete();
       await col.doc(meta.id).delete();
-      try { await assets.delete(meta.assetId); } catch {}
+      if (meta.assetId) { try { await assets.delete(meta.assetId); } catch {} }
     },
     async loadInk(pdfId) {
       const snap = await col.where("kind", "==", "ink").where("pdf", "==", pdfId).get();
@@ -284,6 +300,11 @@ function localStore() {
       await run(["files", "pdfs"], "readwrite", t => { t.objectStore("files").put(buf, id); t.objectStore("pdfs").put(meta); });
       emit(); return meta;
     },
+    async addNotebook(name, tpl) {
+      const meta = { id: "pdf_" + rid(), kind: "pdf", nb: true, name, blanks: [tpl], pages: 1, createdAt: Date.now(), updatedAt: Date.now(), lastPage: 1 };
+      await run(["pdfs"], "readwrite", t => { t.objectStore("pdfs").put(meta); });
+      emit(); return meta;
+    },
     async bytes(meta) {
       const buf = await run(["files"], "readonly", async (t, set) => set(await req(t.objectStore("files").get(meta.id))));
       if (!buf) throw new Error("Arquivo não encontrado neste navegador.");
@@ -315,6 +336,73 @@ function localStore() {
 /* =========================================================
    Biblioteca
    ========================================================= */
+/* ---------- modelos de papel ---------- */
+const PAGE_A4 = [595, 842];
+const TEMPLATES = [["branco", "Em branco"], ["pautado", "Pautado"], ["quadriculado", "Quadriculado"], ["pontilhado", "Pontilhado"]];
+function tplPrims(tpl, w, h) {
+  const lines = [], dots = [], g = 17;
+  if (tpl === "pautado") {
+    for (let y = 92; y < h - 36; y += 24) lines.push([36, y, w - 36, y, "#c5d3e6", 0.7]);
+    lines.push([72, 40, 72, h - 30, "#efb0b0", 0.8]);
+  } else if (tpl === "quadriculado") {
+    for (let x = g; x < w; x += g) lines.push([x, 0, x, h, "#dde2ea", 0.5]);
+    for (let y = g; y < h; y += g) lines.push([0, y, w, y, "#dde2ea", 0.5]);
+  } else if (tpl === "pontilhado") {
+    for (let x = g; x < w; x += g) for (let y = g; y < h; y += g) dots.push([x, y, 0.9, "#aeb4bd"]);
+  }
+  return { lines, dots };
+}
+function drawTemplate(ctx, tpl, w, h, k) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.setTransform(k, 0, 0, k, 0, 0);
+  const { lines, dots } = tplPrims(tpl, w, h);
+  for (const [x1, y1, x2, y2, c, lw] of lines) {
+    ctx.strokeStyle = c; ctx.lineWidth = Math.max(lw, 0.7 / k);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+  for (const [x, y, r, c] of dots) { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y, Math.max(r, 0.8 / k), 0, Math.PI * 2); ctx.fill(); }
+}
+const hexRgb = c => { const h = c.replace("#", ""); return PDFLib.rgb(parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255); };
+function pdfTemplate(pg, tpl, w, h) {
+  const { lines, dots } = tplPrims(tpl, w, h);
+  for (const [x1, y1, x2, y2, c, lw] of lines) pg.drawLine({ start: { x: x1, y: h - y1 }, end: { x: x2, y: h - y2 }, thickness: lw, color: hexRgb(c) });
+  for (const [x, y, r, c] of dots) pg.drawCircle({ x, y: h - y, size: r, color: hexRgb(c) });
+}
+
+function pickTemplate({ title, askName, okLabel, initial }) {
+  return new Promise(res => {
+    const bg = document.createElement("div"); bg.className = "modal-bg";
+    const m = document.createElement("div"); m.className = "modal"; m.style.maxWidth = "440px";
+    const h = document.createElement("h3"); h.textContent = title; m.append(h);
+    let input = null;
+    if (askName) {
+      input = document.createElement("input"); input.type = "text"; input.placeholder = "Nome do caderno";
+      input.value = "Caderno " + new Date().toLocaleDateString("pt-BR"); m.append(input);
+    }
+    const grid = document.createElement("div"); grid.className = "tpls";
+    let sel = initial || "pautado";
+    for (const [id, label] of TEMPLATES) {
+      const b = document.createElement("button"); b.className = "tpl" + (id === sel ? " on" : "");
+      const c = document.createElement("canvas"); c.width = 240; c.height = 340;
+      drawTemplate(c.getContext("2d"), id, PAGE_A4[0], PAGE_A4[1], 240 / PAGE_A4[0]);
+      const s = document.createElement("span"); s.textContent = label;
+      b.append(c, s);
+      b.onclick = () => { sel = id; [...grid.children].forEach(x => x.classList.toggle("on", x === b)); };
+      grid.append(b);
+    }
+    m.append(grid);
+    const row = document.createElement("div"); row.className = "row";
+    const cancel = document.createElement("button"); cancel.textContent = "Cancelar";
+    const ok = document.createElement("button"); ok.textContent = okLabel; ok.className = "primary";
+    row.append(cancel, ok); m.append(row); bg.append(m); document.body.append(bg);
+    const done = v => { bg.remove(); res(v); };
+    cancel.onclick = () => done(null);
+    ok.onclick = () => done({ name: input ? (input.value.trim() || "Caderno") : null, tpl: sel });
+    bg.onclick = e => { if (e.target === bg) done(null); };
+  });
+}
+
 let store = null;
 let library = [];
 const thumbCache = new Map();
@@ -345,16 +433,16 @@ function renderLibrary() {
     const card = document.createElement("div"); card.className = "card"; card.setAttribute("role", "button");
     const cover = document.createElement("div"); cover.className = "cover";
     const cached = thumbCache.get(m.id);
-    if (cached) cover.append(cached); else { const ph = document.createElement("div"); ph.className = "ph"; ph.textContent = "📄"; cover.append(ph); }
+    if (cached) cover.append(cached); else { const ph = document.createElement("div"); ph.className = "ph"; ph.textContent = m.nb ? "📓" : "📄"; cover.append(ph); }
     const meta = document.createElement("div"); meta.className = "meta";
     const nm = document.createElement("div"); nm.className = "name"; nm.textContent = m.name;
     const sub = document.createElement("div"); sub.className = "sub";
-    sub.textContent = `${m.pages || "?"} pág. · ${new Date(m.updatedAt || m.createdAt).toLocaleDateString("pt-BR")}`;
+    sub.textContent = `${m.nb ? "Caderno · " : ""}${m.pages || "?"} pág. · ${new Date(m.updatedAt || m.createdAt).toLocaleDateString("pt-BR")}`;
     meta.append(nm, sub);
     const more = document.createElement("button"); more.className = "more"; more.textContent = "🗑"; more.title = "Apagar";
     more.onclick = async e => {
       e.stopPropagation();
-      if (!(await confirmBox("Apagar este PDF?", `“${m.name}” e todas as anotações dele serão apagados para sempre.`))) return;
+      if (!(await confirmBox(m.nb ? "Apagar este caderno?" : "Apagar este PDF?", `“${m.name}” e todas as anotações dele serão apagados para sempre.`))) return;
       busy("Apagando…");
       try { await store.remove(m); thumbCache.delete(m.id); } catch (err) { toast("Não consegui apagar: " + (err.message || err)); }
       busy();
@@ -368,6 +456,14 @@ function renderLibrary() {
 
 async function makeThumb(m, cover) {
   try {
+    if (m.nb) {
+      const c = document.createElement("canvas"); c.width = 360; c.height = Math.round(360 * PAGE_A4[1] / PAGE_A4[0]);
+      const ctx = c.getContext("2d");
+      drawTemplate(ctx, (m.blanks || [])[0] || "branco", PAGE_A4[0], PAGE_A4[1], 360 / PAGE_A4[0]);
+      try { const ink = await store.loadInk(m.id); (ink[1] || []).forEach(s => drawStroke(ctx, s)); } catch {}
+      thumbCache.set(m.id, c); cover.textContent = ""; cover.append(c);
+      return;
+    }
     const pdf = await pdfjsLib.getDocument({ data: await store.bytes(m) }).promise;
     const page = await pdf.getPage(1);
     const vp1 = page.getViewport({ scale: 1 });
@@ -381,6 +477,16 @@ async function makeThumb(m, cover) {
 }
 
 $("#importBtn").onclick = () => $("#fileInput").click();
+$("#newNbBtn").onclick = async () => {
+  if (!store) return toast("Aguarde, ainda conectando…");
+  const r = await pickTemplate({ title: "Novo caderno", askName: true, okLabel: "Criar", initial: prefs.get("tpl", "pautado") });
+  if (!r) return;
+  prefs.set("tpl", r.tpl);
+  let meta;
+  try { meta = await store.addNotebook(r.name, r.tpl); }
+  catch (err) { return toast("Não consegui criar o caderno: " + (err && (err.message || err.code) || err), 4500); }
+  openDoc(meta);
+};
 $("#fileInput").onchange = async e => {
   const files = [...e.target.files]; e.target.value = "";
   if (!store) return toast("Aguarde, ainda conectando…");
@@ -415,14 +521,17 @@ const live = document.createElement("canvas"); live.className = "live";
 async function openDoc(meta) {
   busy("Abrindo…");
   try {
-    const bytes = await store.bytes(meta);
-    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    const pdf = meta.nb ? null : await pdfjsLib.getDocument({ data: await store.bytes(meta) }).promise;
     const ink = await store.loadInk(meta.id);
     const pages = [];
-    for (let i = 1; i <= pdf.numPages; i++) {
+    if (pdf) for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
       const vp = page.getViewport({ scale: 1 });
-      pages.push({ n: i, page, w: vp.width, h: vp.height, el: null, pdfC: null, inkC: null, rendered: false, task: null, visible: false });
+      pages.push(newPage(i, page, null, vp.width, vp.height));
+    }
+    for (const tpl of (meta.blanks || [])) {
+      const [w, h] = blankSize(pages, meta);
+      pages.push(newPage(pages.length + 1, null, tpl, w, h));
     }
     Object.assign(R, { meta, pdf, pages, ink, history: [], future: [], zoom: 1, current: meta.lastPage || 1 });
     $("#library").classList.add("hidden"); $("#reader").classList.remove("hidden");
@@ -445,6 +554,7 @@ async function closeDoc() {
   if (R.io) R.io.disconnect();
   R.pages.forEach(p => { if (p.task) try { p.task.cancel(); } catch {} });
   if (R.pdf) R.pdf.destroy();
+  if (R.meta && R.meta.nb) thumbCache.delete(R.meta.id);
   Object.assign(R, { meta: null, pdf: null, pages: [], ink: {} });
   pagesEl.textContent = "";
   $("#reader").classList.add("hidden"); $("#library").classList.remove("hidden");
@@ -463,26 +573,37 @@ function buildPages() {
       if (en.isIntersecting) renderPage(p); else freePage(p);
     }
   }, { root: scroller, rootMargin: "120% 0px" });
-  for (const p of R.pages) {
-    const el = document.createElement("div"); el.className = "page"; el.dataset.n = p.n;
-    const pdfC = document.createElement("canvas"); const inkC = document.createElement("canvas"); inkC.className = "ink";
-    const num = document.createElement("span"); num.className = "num"; num.textContent = p.n;
-    el.append(pdfC, inkC, num);
-    Object.assign(p, { el, pdfC, inkC, rendered: false });
-    pagesEl.append(el);
-    R.io.observe(el);
-  }
+  for (const p of R.pages) makePageEl(p);
+}
+
+function newPage(n, page, tpl, w, h) {
+  return { n, page, tpl, w, h, el: null, pdfC: null, inkC: null, rendered: false, task: null, visible: false };
+}
+function blankSize(pages, meta) {
+  if (meta.nb || !pages.length) return PAGE_A4;
+  const ref = pages.find(p => p.page) || pages[0];
+  return [ref.w, ref.h];
+}
+function makePageEl(p) {
+  const el = document.createElement("div"); el.className = "page"; el.dataset.n = p.n;
+  const pdfC = document.createElement("canvas"); const inkC = document.createElement("canvas"); inkC.className = "ink";
+  const num = document.createElement("span"); num.className = "num"; num.textContent = p.n;
+  el.append(pdfC, inkC, num);
+  Object.assign(p, { el, pdfC, inkC, rendered: false });
+  pagesEl.append(el);
+  R.io.observe(el);
+}
+function sizePage(p) {
+  const s = R.base * R.zoom;
+  p.el.style.width = Math.round(p.w * s) + "px";
+  p.el.style.height = Math.round(p.h * s) + "px";
+  p.rendered = false;
 }
 
 function layout() {
   const maxW = Math.max(...R.pages.map(p => p.w));
   R.base = Math.max(0.2, (scroller.clientWidth - 24) / maxW);
-  const s = R.base * R.zoom;
-  for (const p of R.pages) {
-    p.el.style.width = Math.round(p.w * s) + "px";
-    p.el.style.height = Math.round(p.h * s) + "px";
-    p.rendered = false;
-  }
+  R.pages.forEach(sizePage);
   $("#zoomLbl").textContent = Math.round(R.zoom * 100) + "%";
   requestAnimationFrame(() => R.pages.forEach(p => { if (p.visible) renderPage(p); }));
 }
@@ -501,6 +622,12 @@ async function renderPage(p) {
   const s = R.base * R.zoom, k = pixelRatio(p);
   const W = Math.max(1, Math.round(p.w * s * k)), H = Math.max(1, Math.round(p.h * s * k));
   if (p.task) { try { p.task.cancel(); } catch {} }
+  if (!p.page) {                                       // página de caderno
+    p.pdfC.width = W; p.pdfC.height = H;
+    drawTemplate(p.pdfC.getContext("2d"), p.tpl, p.w, p.h, W / p.w);
+    p.inkC.width = W; p.inkC.height = H; drawInk(p);
+    return;
+  }
   const off = document.createElement("canvas"); off.width = W; off.height = H;
   p.inkC.width = W; p.inkC.height = H; drawInk(p);
   try {
@@ -694,7 +821,22 @@ function setZoom(z, focal) {
   scroller.scrollLeft = focal.cx * f - focal.x;
   scroller.scrollTop = focal.cy * f - focal.y;
 }
-$("#zoomIn").onclick = () => setZoom(R.zoom * 1.25);
+$("#addPageBtn").onclick = async () => {
+  if (!R.meta) return;
+  const lastBlank = [...R.pages].reverse().find(p => !p.page);
+  const r = await pickTemplate({ title: "Adicionar página no final", okLabel: "Adicionar", initial: lastBlank ? lastBlank.tpl : prefs.get("tpl", "pautado") });
+  if (!r || !R.meta) return;
+  prefs.set("tpl", r.tpl);
+  const [w, h] = blankSize(R.pages, R.meta);
+  const p = newPage(R.pages.length + 1, null, r.tpl, w, h);
+  R.pages.push(p); makePageEl(p); sizePage(p);
+  R.meta.blanks = [...(R.meta.blanks || []), r.tpl];
+  R.meta.pages = R.pages.length;
+  store.updateMeta(R.meta.id, { blanks: R.meta.blanks, pages: R.meta.pages, updatedAt: Date.now() })
+    .catch(() => toast("Não consegui salvar a página nova. Tente de novo."));
+  requestAnimationFrame(() => { scroller.scrollTo({ top: p.el.offsetTop - 10, behavior: "smooth" }); updatePill(); });
+};
+$("#zoomIn").onclick =() => setZoom(R.zoom * 1.25);
 $("#zoomOut").onclick = () => setZoom(R.zoom / 1.25);
 $("#zoomLbl").onclick = () => setZoom(1);
 
@@ -798,7 +940,14 @@ $("#exportBtn").onclick = async () => {
   let out;
   try {
     await flushSave();
-    const doc = await PDFLib.PDFDocument.load(await store.bytes(R.meta), { ignoreEncryption: true });
+    const doc = R.meta.nb
+      ? await PDFLib.PDFDocument.create()
+      : await PDFLib.PDFDocument.load(await store.bytes(R.meta), { ignoreEncryption: true });
+    for (const p of R.pages) {                         // páginas de caderno / adicionadas
+      if (p.page) continue;
+      const pg = doc.addPage([p.w, p.h]);
+      pdfTemplate(pg, p.tpl, p.w, p.h);
+    }
     const pages = doc.getPages();
     for (const [nStr, strokes] of Object.entries(R.ink)) {
       const pg = pages[+nStr - 1]; if (!pg || !strokes || !strokes.length) continue;
@@ -810,7 +959,7 @@ $("#exportBtn").onclick = async () => {
         let prSum = 0;
         for (let i = 0; i < p.length; i += 3) { prSum += p[i + 2]; if (i) d += ` L ${p[i] / 10} ${p[i + 1] / 10}`; }
         const avg = prSum / (p.length / 3) / 100;
-        const hex = s.c.replace("#", ""); const rgb = PDFLib.rgb(parseInt(hex.slice(0, 2), 16) / 255, parseInt(hex.slice(2, 4), 16) / 255, parseInt(hex.slice(4, 6), 16) / 255);
+        const rgb = hexRgb(s.c);
         pg.drawSvgPath(d, {
           x: box.x, y: box.y + box.height,
           borderColor: rgb, borderWidth: s.t === "hl" ? s.w : s.w * (0.35 + 1.1 * avg),
@@ -823,7 +972,7 @@ $("#exportBtn").onclick = async () => {
     out = await doc.save();
   } catch (err) { busy(); return toast("Erro ao gerar o PDF: " + (err && err.message || err), 4500); }
   busy();
-  const filename = R.meta.name + " (anotado).pdf";
+  const filename = R.meta.name + (R.meta.nb ? ".pdf" : " (anotado).pdf");
   if (dl) {
     try { await dl.save({ filename, data: out }); }
     catch (err) { if (err && err.code !== "declined") toast("Não consegui salvar o arquivo (" + (err.code || err.message || err) + ")."); }
